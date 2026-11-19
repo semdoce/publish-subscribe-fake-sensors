@@ -2,7 +2,6 @@ package sensors;
 
 public class Cardiaco implements Sensor {
     private double bpm;
-    private String status;
 
     @Override
     public double medir() {
@@ -33,41 +32,12 @@ public class Cardiaco implements Sensor {
     }
 
     @Override
-    public String classificar() {
-        if (bpm > 140) {
-            this.status = "TAQUICARDIA SEVERA (Alerta Crítico)";
-            return "critico";
-        } 
-        else if (bpm > 100) {
-            this.status = "TAQUICARDIA (Batimento Elevado)";
-            return "atencao";
-        }
-        else if (bpm < 60) {
-            this.status = "BRADICARDIA (Batimento Baixo)";
-            return "critico";
-        } 
-        else {
-            this.status = "Batimento NORMAL";
-            return "rotina";
-        }
-    }
-
-    public void analiseBpm() {
-        classificar();
-        System.out.println(bpm + " BPM");
-        System.out.println("Status: " + status);
-    }
-
-    @Override
     public String getDescricao() {
-        return bpm + " BPM - " + status;
+        return bpm + " BPM";
     }
 
     public double getBpm() {
         return this.bpm;
     }
 
-    public String getStatus() {
-        return this.status;
-    }
 }

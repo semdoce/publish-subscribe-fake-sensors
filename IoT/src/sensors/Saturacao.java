@@ -2,7 +2,6 @@ package sensors;
 
 public class Saturacao implements Sensor {
     private double spo2;
-    private String status;
 
     @Override
     public double medir() {
@@ -30,41 +29,11 @@ public class Saturacao implements Sensor {
     }
 
     @Override
-    public String classificar() {
-        if (spo2 >= 95) {
-            this.status = "Saturação NORMAL";
-            return "rotina";
-        } 
-        else if (spo2 >= 91) {
-            this.status = "HIPÓXIA LEVE (Atenção)";
-            return "atencao";
-        }
-        else if (spo2 >= 81) {
-            this.status = "HIPÓXIA MODERADA (Alerta)";
-            return "atencao";
-        } 
-        else {
-            this.status = "HIPÓXIA SEVERA (Alerta Crítico)";
-            return "critico";
-        }
-    }
-
-    public void analiseSpo2() {
-        classificar();
-        System.out.println(spo2 + "% SpO2");
-        System.out.println("Status: " + status);
-    }
-
-    @Override
     public String getDescricao() {
-        return spo2 + "% SpO2 - " + status;
+        return spo2 + "% SpO2";
     }
 
     public double getSpo2() {
         return this.spo2;
-    }
-
-    public String getStatus() {
-        return this.status;
     }
 }
