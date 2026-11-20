@@ -1,17 +1,18 @@
 package paciente;
 
-import sensors.FacadeSensors;
+//import sensors.FacadeSensors;
+import mediator.MonitorMediator;
 
 public class Paciente {
     private String nome;
-    private FacadeSensors monitorSensores;
+    private MonitorMediator monitorSensores;
 
     public Paciente(String nome) {
         this.nome = nome;
-        this.monitorSensores = new FacadeSensors();
+        this.monitorSensores = new MonitorMediator();
     }
 
-    public void analiseGeral() {
+    public void checkup() {
         // Dispara o monitoramento continuo dos sensores via RabbitMQ
         this.monitorSensores.checkup(this.nome);
     }
