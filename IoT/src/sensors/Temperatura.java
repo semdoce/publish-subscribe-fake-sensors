@@ -2,7 +2,6 @@ package sensors;
 
 public class Temperatura implements Sensor {
     private double temp;
-    private String status;
 
     @Override
     public double medir() {
@@ -35,41 +34,12 @@ public class Temperatura implements Sensor {
     }
 
     @Override
-    public String classificar() {
-        if (temp >= 37.8) {
-            this.status = "FEBRE / HIPERTERMIA (Alerta)";
-            return "critico";
-        } 
-        else if (temp >= 37.3) {
-            this.status = "ESTADO FEBRIL (Atenção)";
-            return "atencao";
-        }
-        else if (temp < 35.0) {
-            this.status = "HIPOTERMIA (Alerta Crítico)";
-            return "critico";
-        } 
-        else {
-            this.status = "Temperatura NORMAL";
-            return "rotina";
-        }
-    }
-
-    public void analiseTemperatura() {
-        classificar();
-        System.out.println(temp + " °C");
-        System.out.println("Status: " + status);
-    }
-
-    @Override
     public String getDescricao() {
-        return temp + " °C - " + status;
+        return temp + " °C";
     }
 
     public double getTemperatura() {
         return this.temp;
     }
 
-    public String getStatus() {
-        return this.status;
-    }
 }

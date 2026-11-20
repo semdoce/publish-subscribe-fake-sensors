@@ -3,7 +3,6 @@ package sensors;
 public class Pressao implements Sensor {
     private double sistolica;
     private double diastolica;
-    private String status;
 
     @Override
     public double medir() {
@@ -35,31 +34,8 @@ public class Pressao implements Sensor {
     }
 
     @Override
-    public String classificar() {
-        if (sistolica >= 140 || diastolica >= 90) {
-            this.status = "HIPERTENSÃO";
-            return "critico";
-        } else if (sistolica < 90 || diastolica < 60) {
-            this.status = "Pressão BAIXA";
-            return "critico";
-        } else if (sistolica > 120 || diastolica > 80) {
-            this.status = "ELEVADA / PRÉ-HIPERTENSÃO";
-            return "atencao";
-        } else {
-            this.status = "Pressão NORMAL";
-            return "rotina";
-        }
-    }
-
-    public void analisePressao() {
-        classificar();
-        System.out.println(sistolica + " " + diastolica);
-        System.out.println("Status: " + status);
-    }
-
-    @Override
     public String getDescricao() {
-        return sistolica + "/" + diastolica + " mmHg - " + status;
+        return sistolica + "/" + diastolica + " mmHg";
     }
 
     public double getSistolica() {
@@ -70,7 +46,4 @@ public class Pressao implements Sensor {
         return this.diastolica;
     }
 
-    public String getStatus() {
-        return this.status;
-    }
 }
