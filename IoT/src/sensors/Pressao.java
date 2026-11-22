@@ -4,6 +4,14 @@ public class Pressao implements Sensor {
     private double sistolica;
     private double diastolica;
 
+    public Pressao() {
+    }
+
+    public Pressao(double sistolica, double diastolica) {
+        this.sistolica = sistolica;
+        this.diastolica = diastolica;
+    }
+
     @Override
     public double medir() {
         int categoria = (int) Math.floor(Math.random() * 6) + 1;

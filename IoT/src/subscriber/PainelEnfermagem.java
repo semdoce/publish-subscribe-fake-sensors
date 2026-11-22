@@ -1,20 +1,21 @@
 package subscriber;
 
+import broker.RabbitMQConfig;
+
 public class PainelEnfermagem extends PainelHospitalar {
 
     @Override
-    protected String getTopicoAssinatura() {
-        // Recebe todas as medicoes de todos os leitos e sinais
-        return "#";
+    protected String getNomeFila() {
+        return RabbitMQConfig.FILA_ENFERMAGEM;
     }
 
     @Override
-    protected void processarMensagem(String routingKey, String mensagem) {
-        System.out.println(" [Enfermagem] " + routingKey + " -> " + mensagem);
+    protected void processarMensagem(String mensagem) {
+        System.out.println("  [ENFERMAGEM] " + mensagem);
     }
 
     @Override
     protected String getNomePainel() {
-        return "PAINEL DE ENFERMAGEM (Monitoramento Geral)";
+        return "PAINEL DE ENFERMAGEM (Monitoramento Geral de Todos os Leitos)";
     }
 }

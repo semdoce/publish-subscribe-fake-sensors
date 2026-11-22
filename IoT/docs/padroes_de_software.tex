@@ -1,0 +1,300 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\geometry{top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,calc,fit,backgrounds}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    urlcolor=blue!70!black,
+    citecolor=blue!70!black
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue!80!black}\bfseries,
+    stringstyle=\color{green!50!black},
+    commentstyle=\color{gray}\itshape,
+    frame=single,
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    backgroundcolor=\color{black!3},
+    showspaces=false,
+    showstringspaces=false
+}
+
+\title{\textbf{Descrição dos Padrões de Software Utilizados}\\
+\large Sistema de Monitoramento Hospitalar Baseado em IoT e Mensageria (Arquitetura sem Exchanges)}
+\author{\textbf{Equipe de Arquitetura de Software}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este documento apresenta a especificação e justificativa técnica dos padrões de projeto (\textit{Design Patterns}) empregados no desenvolvimento do Sistema de Monitoramento Hospitalar IoT. São discutidas as motivações para a substituição do padrão \textit{Facade} pelo padrão \textbf{Mediator}, a eliminação completa das \textit{Exchanges} complexas no RabbitMQ (transferindo a inteligência de roteamento clínico para o próprio Mediator), bem como a aplicação dos padrões \textit{Template Method} e \textit{Simple Factory}. Inclui-se o Diagrama de Classes UML que fundamenta a estrutura orientada a objetos da solução.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introdução e Contexto da Refatoração}
+O sistema desenvolvido tem como objetivo coletar, classificar e distribuir telemetrias de sinais vitais de pacientes hospitalares (frequência cardíaca, pressão arterial, saturação de oxigênio $O_2$ e temperatura corporal) para diferentes setores clínicos: Posto de Enfermagem, Painel do Médico Especialista e Aplicativo Móvel de Emergência.
+
+\subsection{A Decisão de Eliminar as Exchanges do RabbitMQ}
+Nas versões preliminares do projeto, o sistema dependia de um \textit{Topic Exchange} no RabbitMQ com chaves hierárquicas complexas (\texttt{<paciente>.<sinal>.<prioridade>}) para realizar o roteamento nos clientes. Em discussão arquitetural com o professor, identificou-se que essa abordagem transferia indevidamente regras do domínio da aplicação para a infraestrutura de mensageria, além de dificultar o desacoplamento e a rastreabilidade dos nós sensores.
+
+Optou-se por \textbf{eliminar completamente qualquer declaração de Exchange} (Topic, Direct ou Fanout). No novo modelo:
+\begin{enumerate}
+    \item Cada nó sensor publica diretamente em sua própria fila ponto-a-ponto no RabbitMQ (\texttt{fila.cardiaco}, \texttt{fila.pressao}, \texttt{fila.saturacao}, \texttt{fila.temperatura}).
+    \item O componente \textbf{Mediator} atua como o cérebro do sistema: consome essas quatro filas, executa a análise de dados e aplica as regras de triagem hospitalar.
+    \item O próprio \textbf{Mediator} entrega os dados nas filas de saída de cada monitor (\texttt{fila.enfermagem}, \texttt{fila.medico.<id>}, \texttt{fila.alerta}).
+\end{enumerate}
+
+---
+
+\section{Padrões de Software Empregados}
+
+\subsection{Padrão Comportamental: Mediator}
+
+\subsubsection{Motivação e Responsabilidades}
+O padrão \textbf{Mediator} (GoF) define um objeto que encapsula e orquestra a forma como um conjunto de entidades interage, promovendo o acoplamento fraco ao evitar que as partes se comuniquem diretamente.
+
+No sistema hospitalar, o \texttt{MonitorMediator} centraliza duas grandes responsabilidades que antes estavam desarticuladas:
+\begin{enumerate}
+    \item \textbf{Consumo Ponto-a-Ponto e Análise Clínica:} O mediador escuta de forma assíncrona as quatro filas individuais de sensores. Ao receber uma medição, utiliza verificações de tipo (\texttt{instanceof}) para acionar a rotina correta de interpretação fisiológica (\textit{Normal}, \textit{Atenção}, \textit{Crítico}).
+    \item \textbf{Roteamento Inteligente sem Exchanges:} O mediador implementa a lógica de distribuição:
+    \begin{itemize}
+        \item \textbf{Enfermagem:} Recebe todas as mensagens de todos os leitos $\rightarrow$ o Mediator publica na \texttt{fila.enfermagem}.
+        \item \textbf{Médico:} Recebe somente as leituras do paciente sob seus cuidados $\rightarrow$ o Mediator publica na fila dedicada \texttt{fila.medico.<idPaciente>}.
+        \item \textbf{Móvel / Emergência:} Recebe apenas eventos com risco de vida $\rightarrow$ o Mediator publica na \texttt{fila.alerta} exclusivamente quando a prioridade clínica for \texttt{"critico"}.
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Por que substituir o Facade pelo Mediator?}
+A Tabela~\ref{tab:facade_vs_mediator} sintetiza o comparativo arquitetural:
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{p{4.2cm}p{5.5cm}p{5.5cm}}
+\toprule
+\textbf{Critério} & \textbf{Padrão Facade (Anterior)} & \textbf{Padrão Mediator (Atual)} \\
+\midrule
+\textbf{Papel Arquitetural} & Apenas mascarava métodos dos sensores dentro de um único processo em memória. & Intermediário autônomo entre processos produtores e processos consumidores. \\
+\textbf{Infraestrutura} & Obrigava a usar Topic Exchange com casamento de wildcards na mensageria. & Permite usar filas simples diretas, eliminando totalmente exchanges. \\
+\textbf{Autonomia dos Sensores} & Nula: o Facade instanciava e media todos os sensores em um loop monolítico. & Alta: cada sensor é um publicador independente conectado à sua fila. \\
+\textbf{Localização da Regra} & Regras de negócio misturadas com loop de transmissão do broker. & Lógica de negócio e roteamento totalmente concentradas no Mediator. \\
+\bottomrule
+\end{tabular}
+\caption{Comparação entre Facade e Mediator no sistema hospitalar.}
+\label{tab:facade_vs_mediator}
+\end{table}
+
+\subsubsection{Discussão sobre o Padrão Visitor}
+Durante os estudos preliminares, cogitou-se utilizar o padrão \textbf{Visitor} para substituir os testes de \texttt{instanceof} no mediador por \textit{double-dispatch}. No entanto, considerando que o domínio do sistema abrange estritamente quatro sinais vitais hospitalares padronizados, a equipe optou pela simplicidade do \textbf{Mediator} puro: o uso de \texttt{instanceof} é direto, não prejudica o desempenho e evita a criação de hierarquias de visitantes desnecessárias para um escopo acadêmico claro e conciso.
+
+\subsection{Padrão Arquitetural: Mensageria Ponto-a-Ponto e Filas Dedicadas}
+
+Com a eliminação da \textit{Topic Exchange}, o sistema opera exclusivamente com o mecanismo de \textbf{Filas Ponto-a-Ponto} no RabbitMQ:
+\begin{itemize}
+    \item \textbf{Filas de Entrada (Sensores $\rightarrow$ Mediator):}
+    \begin{itemize}
+        \item \texttt{fila.cardiaco}: buffer exclusivo para leituras de BPM.
+        \item \texttt{fila.pressao}: buffer exclusivo para leituras sistólica/diastólica.
+        \item \texttt{fila.saturacao}: buffer exclusivo para $SpO_2$.
+        \item \texttt{fila.temperatura}: buffer exclusivo para temperatura em $^\circ\text{C}$.
+    \end{itemize}
+    \item \textbf{Filas de Saída (Mediator $\rightarrow$ Monitores):}
+    \begin{itemize}
+        \item \texttt{fila.enfermagem}: consumida pelo painel geral da enfermagem.
+        \item \texttt{fila.medico.<id>}: consumida pelo terminal do médico do leito.
+        \item \texttt{fila.alerta}: consumida pelo aplicativo móvel de emergência.
+    \end{itemize}
+\end{itemize}
+Dessa forma, cada monitor consome de sua respectiva fila sem concorrência indevida de mensagens com outros setores (evitando que vire uma \textit{Work Queue} destrutiva acidental).
+
+\subsection{Padrão Comportamental: Template Method}
+
+Implementado na classe abstrata \texttt{PainelHospitalar}:
+\begin{lstlisting}[language=Java]
+public abstract class PainelHospitalar {
+    protected abstract String getNomeFila();
+    protected abstract void processarMensagem(String mensagem);
+    protected abstract String getNomePainel();
+
+    // Template Method invariante
+    public final void iniciar() {
+        // 1. Conecta ao RabbitMQ
+        // 2. Declara a fila direta getNomeFila() (sem exchange)
+        // 3. Registra DeliverCallback com processarMensagem()
+        // 4. Inicia consumo assincrono
+    }
+}
+\end{lstlisting}
+O método \texttt{iniciar()} é declarado como \texttt{final}, garantindo que todas as subclasses (\texttt{PainelEnfermagem}, \texttt{PainelMedico}, \texttt{AppEmergencia}) compartilhem rigorosamente o mesmo fluxo de conexão e escuta assíncrona.
+
+\subsection{Padrão Criacional: Simple Factory}
+
+Implementado na classe \texttt{PainelFactory}, isolando a instanciação dos tipos de clientes hospitalares:
+\begin{lstlisting}[language=Java]
+public class PainelFactory {
+    public static PainelHospitalar criarPainel(String tipo, String paciente) {
+        switch (tipo.toLowerCase()) {
+            case "enfermagem": return new PainelEnfermagem();
+            case "medico":     return new PainelMedico(paciente);
+            case "emergencia": return new AppEmergencia(paciente);
+            default:           return null;
+        }
+    }
+}
+\end{lstlisting}
+
+\newpage
+\section{Diagrama de Classes da Solução}
+
+A Figura~\ref{fig:diagrama_classes} ilustra a estrutura de classes orientada a objetos do projeto.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    classbox/.style={draw=black!80, fill=blue!5, rounded corners=2pt, font=\footnotesize, text width=4.3cm},
+    abstractbox/.style={draw=black!80, fill=green!5, rounded corners=2pt, font=\footnotesize, text width=4.3cm},
+    arrow/.style={-{Latex[length=2.5mm]}, line width=0.8pt},
+    inherit/.style={-{Triangle[open,length=3mm]}, line width=0.8pt},
+    dashedinherit/.style={-{Triangle[open,length=3mm]}, line width=0.8pt, dashed}
+]
+
+% Interface Sensor
+\node[classbox] (sensor) at (0, 7.5) {
+    \begin{center}\textbf{<<interface>>}\\\textbf{Sensor}\end{center}
+    \rule{4.3cm}{0.4pt}\\
+    + medir(): double\\
+    + getTipoSinal(): String\\
+    + getDescricao(): String
+};
+
+% Classes Concretas de Sensores
+\node[classbox, text width=3.2cm] (cardiaco) at (-4.5, 4.5) {
+    \begin{center}\textbf{Cardiaco}\end{center}
+    \rule{3.2cm}{0.4pt}\\
+    - bpm: double\\
+    \rule{3.2cm}{0.4pt}\\
+    + medir(): double\\
+    + getBpm(): double
+};
+
+\node[classbox, text width=3.2cm] (pressao) at (-1.2, 4.5) {
+    \begin{center}\textbf{Pressao}\end{center}
+    \rule{3.2cm}{0.4pt}\\
+    - sistolica: double\\
+    - diastolica: double\\
+    \rule{3.2cm}{0.4pt}\\
+    + medir(): double
+};
+
+\node[classbox, text width=3.2cm] (saturacao) at (2.1, 4.5) {
+    \begin{center}\textbf{Saturacao}\end{center}
+    \rule{3.2cm}{0.4pt}\\
+    - spo2: double\\
+    \rule{3.2cm}{0.4pt}\\
+    + medir(): double
+};
+
+\node[classbox, text width=3.2cm] (temp) at (5.4, 4.5) {
+    \begin{center}\textbf{Temperatura}\end{center}
+    \rule{3.2cm}{0.4pt}\\
+    - temp: double\\
+    \rule{3.2cm}{0.4pt}\\
+    + medir(): double
+};
+
+% Conexoes Sensores
+\draw[dashedinherit] (cardiaco.north) -- ++(0,0.5) -| (sensor.south);
+\draw[dashedinherit] (pressao.north) -- ++(0,0.5) -| (sensor.south);
+\draw[dashedinherit] (saturacao.north) -- ++(0,0.5) -| (sensor.south);
+\draw[dashedinherit] (temp.north) -- ++(0,0.5) -| (sensor.south);
+
+% Interface SensorMediator
+\node[classbox] (mediatorInt) at (7, 8) {
+    \begin{center}\textbf{<<interface>>}\\\textbf{SensorMediator}\end{center}
+    \rule{4.3cm}{0.4pt}\\
+    + iniciar(): void\\
+    + processar(pac, s): Resultado\\
+    + analisar(s): Resultado
+};
+
+% Classe Concreta MonitorMediator
+\node[classbox, text width=5cm] (mediatorImpl) at (7, 4.5) {
+    \begin{center}\textbf{MonitorMediator}\end{center}
+    \rule{5cm}{0.4pt}\\
+    - channel: Channel\\
+    \rule{5cm}{0.4pt}\\
+    + iniciar(): void\\
+    + processarMensagemFila(f, p): void\\
+    + processar(pac, s): Resultado\\
+    + analisar(s): Resultado
+};
+\draw[dashedinherit] (mediatorImpl.north) -- (mediatorInt.south);
+
+% Hierarquia de Assinantes (Template Method)
+\node[abstractbox, text width=5cm] (painelHosp) at (0, 1.2) {
+    \begin{center}\textbf{<<abstract>>}\\\textbf{PainelHospitalar}\end{center}
+    \rule{5cm}{0.4pt}\\
+    \# getNomeFila()*: String\\
+    \# processarMensagem(msg)*: void\\
+    \# getNomePainel()*: String\\
+    \rule{5cm}{0.4pt}\\
+    + iniciar(): void
+};
+
+\node[classbox, text width=3.3cm] (enfermagem) at (-4, -1.8) {
+    \begin{center}\textbf{PainelEnfermagem}\end{center}
+    \rule{3.3cm}{0.4pt}\\
+    \# getNomeFila(): "fila.enfermagem"\\
+    \# processarMensagem()
+};
+
+\node[classbox, text width=3.3cm] (medico) at (0, -1.8) {
+    \begin{center}\textbf{PainelMedico}\end{center}
+    \rule{3.3cm}{0.4pt}\\
+    - idPaciente: String\\
+    \rule{3.3cm}{0.4pt}\\
+    \# getNomeFila(): "fila.medico.<id>"\\
+    \# processarMensagem()
+};
+
+\node[classbox, text width=3.3cm] (emergencia) at (4, -1.8) {
+    \begin{center}\textbf{AppEmergencia}\end{center}
+    \rule{3.3cm}{0.4pt}\\
+    - idPaciente: String\\
+    \rule{3.3cm}{0.4pt}\\
+    \# getNomeFila(): "fila.alerta"\\
+    \# processarMensagem()
+};
+
+\draw[inherit] (enfermagem.north) -- ++(0,0.5) -| (painelHosp.south);
+\draw[inherit] (medico.north) -- (painelHosp.south);
+\draw[inherit] (emergencia.north) -- ++(0,0.5) -| (painelHosp.south);
+
+\end{tikzpicture}
+\caption{Diagrama de Classes UML com Mediator, Filas Diretas e Template Method.}
+\label{fig:diagrama_classes}
+\end{figure}
+
+\section{Conclusão}
+A eliminação das \textit{Exchanges} complexas transferiu a lógica de roteamento para onde ela realmente pertence: no \textbf{MonitorMediator}. Dessa forma, a arquitetura tornou-se simultaneamente mais simples do ponto de vista de infraestrutura e muito mais expressiva no nível do software, atendendo com fidelidade o esboço de implantação validado com o professor.
+
+\end{document}

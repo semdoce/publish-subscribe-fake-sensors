@@ -3,6 +3,13 @@ package sensors;
 public class Temperatura implements Sensor {
     private double temp;
 
+    public Temperatura() {
+    }
+
+    public Temperatura(double temp) {
+        this.temp = temp;
+    }
+
     @Override
     public double medir() {
         int categoria = (int) Math.floor(Math.random() * 6) + 1;

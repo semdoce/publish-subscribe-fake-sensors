@@ -3,6 +3,13 @@ package sensors;
 public class Saturacao implements Sensor {
     private double spo2;
 
+    public Saturacao() {
+    }
+
+    public Saturacao(double spo2) {
+        this.spo2 = spo2;
+    }
+
     @Override
     public double medir() {
         int categoria = (int) Math.floor(Math.random() * 6) + 1;

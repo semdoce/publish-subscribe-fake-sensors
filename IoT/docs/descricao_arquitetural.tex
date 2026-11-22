@@ -1,0 +1,430 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\geometry{top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,calc,fit,backgrounds,decorations.pathreplacing}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    urlcolor=blue!70!black,
+    citecolor=blue!70!black
+}
+
+\title{\textbf{Descrição Arquitetural do Sistema}\\
+\large Plataforma Distribuída de Monitoramento Hospitalar em Tempo Real Baseada em IoT e Mensageria (Arquitetura Ponto-a-Ponto sem Exchanges)}
+\author{\textbf{Equipe de Arquitetura de Software}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este documento especifica a Descrição Arquitetural da Plataforma IoT de Monitoramento de Sinais Vitais Hospitalares, em conformidade com as diretrizes da norma ISO/IEC/IEEE 42010. São definidos a contextualização do problema e a proposta de solução sistêmica, os \textit{architectural concerns} (preocupações arquiteturais), os pontos de vista (\textit{viewpoints}) e perspectivas correspondentes. Destaca-se a reformulação do Diagrama de Implantação baseada no esboço em quadro negro acordado com o professor, na qual as \textit{Exchanges} foram completamente eliminadas, atribuindo ao padrão \textbf{Mediator} o papel de processamento e roteamento direto entre as filas de entrada e as filas dos painéis clínicos.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Contextualização do Problema e a Solução Proposta}
+
+\subsection{O Problema Hospitalar}
+Em ambientes hospitalares modernos, particularmente em Unidades de Terapia Intensiva (UTI) e enfermarias cirúrgicas, a monitorização de sinais vitais de múltiplos pacientes é uma tarefa crítica e ininterrupta. As abordagens tradicionais e analógicas apresentam desafios severos:
+\begin{enumerate}
+    \item \textbf{Fadiga de Alarmes:} Profissionais de saúde são expostos a centenas de alertas sonoros diários, muitos dos quais são falsos positivos ou leituras rotineiras que não demandam intervenção imediata.
+    \item \textbf{Latência de Resposta:} A detecção tardia de eventos agudos (como parada cardiorrespiratória por taquicardia severa, choque hipovolêmico ou choque séptico por hipertermia súbita) eleva exponencialmente os índices de morbimortalidade.
+    \item \textbf{Sobrecarga Cognitiva e Falta de Roteamento Seletivo:} Médicos especialistas necessitam acompanhar pacientes específicos sob sua responsabilidade, a enfermagem precisa de uma visão panorâmica de todos os leitos, e as equipes de código azul (emergência) devem ser acionadas apenas em intercorrências graves.
+\end{enumerate}
+
+\subsection{A Solução Sistêmica: Arquitetura sem Exchanges com Mediator}
+Para solucionar essas dores com o máximo desacoplamento, concebeu-se uma \textbf{Plataforma IoT Hospitalar Orientada a Eventos}. 
+
+Diferente de abordagens baseadas em exchanges complexas, a arquitetura adota \textbf{filas ponto-a-ponto dedicadas no RabbitMQ}:
+\begin{itemize}
+    \item Quatro nós coletores em hardware dedicados a cada sinal vital (Frequência Cardíaca, Pressão Arterial, Saturação de Oxigênio $O_2$ e Temperatura Corporal) depositam periodicamente suas medições brutas em quatro filas de entrada independentes.
+    \item Um serviço centralizador baseado no padrão \textbf{MonitorMediator} consome essas filas de sensores, executa a classificação fisiológica (rotina, atenção ou crítico) e distribui os eventos diretamente para as filas dos respectivos clientes:
+    \begin{itemize}
+        \item \texttt{fila.enfermagem}: recebe todas as telemetrias de todos os leitos;
+        \item \texttt{fila.medico.<id>}: recebe apenas as leituras do paciente sob responsabilidade daquele médico;
+        \item \texttt{fila.alerta}: recebe exclusivamente ocorrências com classificação de urgência/emergência crítica.
+    \end{itemize}
+\end{itemize}
+
+---
+
+\section{Preocupações Arquiteturais (\textit{Architectural Concerns})}
+
+A Tabela~\ref{tab:concerns} sintetiza as principais preocupações que guiaram as decisões de design da arquitetura:
+
+\begin{table}[h!]
+\centering
+\small
+\begin{tabular}{p{3.5cm}p{6cm}p{6cm}}
+\toprule
+\textbf{Preocupação (\textit{Concern})} & \textbf{Descrição do Requisito} & \textbf{Decisão Arquitetural Adotada} \\
+\midrule
+\textbf{C1: Desacoplamento Espacial e Temporal} & Sensores e clientes não devem depender do ciclo de vida ou presença física mútua. & Uso de Message Broker RabbitMQ com filas buffers assíncronas ponto-a-ponto. \\
+\textbf{C2: Filtragem Seletiva e Redução de Ruído} & Cada perfil clínico deve receber apenas os dados estritamente necessários ao seu papel. & Roteamento centralizado no Mediator direcionando para filas dedicadas dos painéis. \\
+\textbf{C3: Baixa Latência e Tempo Real} & O tempo de entrega entre a medição e a chegada no alerta deve ser mínimo. & Publicação direta em filas nativas sem sobrecarga de processamento de exchanges. \\
+\textbf{C4: Modularidade dos Sensores} & Dispositivos de telemetria devem operar como nós isolados sem compartilhar memória. & Filas individuais dedicadas (\texttt{fila.cardiaco}, etc.) para cada transdutor. \\
+\textbf{C5: Confiabilidade e Tolerância a Falhas} & Quedas transitórias em clientes ou sensores não devem interromper o monitoramento do leito. & Filas duráveis e buffers de mensageria com reconexão automática. \\
+\bottomrule
+\end{tabular}
+\caption{Mapeamento de Preocupações Arquiteturais (\textit{Concerns}).}
+\label{tab:concerns}
+\end{table}
+
+---
+
+\section{Pontos de Vista (\textit{Viewpoints}) e Perspectivas}
+
+\subsection{Ponto de Vista de Implantação (\textit{Deployment Viewpoint})}
+Aborda os nós de hardware físico, nós de execução de software e protocolos de interconexão de rede. Endereça diretamente os \textit{concerns} \textbf{C1}, \textbf{C3} e \textbf{C4}. Detalhado na Seção~\ref{sec:implantacao}.
+
+\subsection{Ponto de Vista de Processos (\textit{Process / Behavioral Viewpoint})}
+Descreve a dinâmica de execução concorrente, o consumo não-bloqueante das filas pelo Mediator e a distribuição direta para os painéis clínicos. Endereça \textbf{C1} e \textbf{C2}.
+
+\subsection{Ponto de Vista da Informação (\textit{Information Viewpoint})}
+Estrutura os contratos de dados trafegados na rede. Define o payload bruto dos sensores (\texttt{pacienteId;valor}) e o formato textual enriquecido entregue aos painéis.
+
+\subsection{Perspectivas de Qualidade}
+\begin{itemize}
+    \item \textbf{Perspectiva de Desempenho (\textit{Performance}):} Garantida pela ausência de polling ativo; a entrega é baseada em \textit{Push} reativo via callbacks AMQP.
+    \item \textbf{Perspectiva de Escalabilidade (\textit{Scalability}):} Permite adicionar dezenas de novos leitos e sensores apenas declarando novas filas no broker, sem alterar os componentes existentes.
+\end{itemize}
+
+\newpage
+\section{Diagrama de Implantação (\textit{Deployment Diagram})}
+\label{sec:implantacao}
+
+A Figura~\ref{fig:diagrama_implantacao} representa a arquitetura física e lógica de nós do sistema, retratando fielmente o esboço do quadro negro validado com o professor (sem exchanges).
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    node distance=1.5cm,
+    nodebox/.style={draw=black!80, fill=blue!8, rounded corners=3pt, font=\footnotesize, align=center, minimum width=3.2cm, minimum height=1.3cm, line width=0.8pt},
+    brokerbox/.style={draw=orange!80!black, fill=orange!8, rounded corners=3pt, font=\footnotesize, align=center, minimum width=4.8cm, minimum height=7.2cm, line width=1pt},
+    queuebox/.style={draw=black!70, fill=white, rounded corners=2pt, font=\scriptsize, align=center, minimum width=4.2cm, minimum height=0.65cm},
+    outqueuebox/.style={draw=green!70!black, fill=green!10, rounded corners=2pt, font=\scriptsize, align=center, minimum width=4.2cm, minimum height=0.65cm},
+    clientbox/.style={draw=black!80, fill=green!8, rounded corners=3pt, font=\footnotesize, align=center, minimum width=3.6cm, minimum height=1.4cm, line width=0.8pt},
+    conn/.style={-{Latex[length=2.5mm]}, line width=1pt, draw=black!70}
+]
+
+% Sensores a Esquerda
+\node[nodebox] (card) at (-5.5, 3.2) {
+    \textbf{<<device>>}\\
+    \textbf{Sensor Cardíaco}\\
+    Leituras: $40$ a $200$ BPM
+};
+
+\node[nodebox] (o2) at (-5.5, 1.2) {
+    \textbf{<<device>>}\\
+    \textbf{Sensor de Oxigênio ($O_2$)}\\
+    Saturação: $60\%$ a $100\%$
+};
+
+\node[nodebox] (temp) at (-5.5, -0.8) {
+    \textbf{<<device>>}\\
+    \textbf{Sensor de Temperatura}\\
+    Faixa: $35.0^\circ\text{C} < t < 39.5^\circ\text{C}$
+};
+
+\node[nodebox] (press) at (-5.5, -2.8) {
+    \textbf{<<device>>}\\
+    \textbf{Sensor de Pressão}\\
+    Sistólica / Diastólica mmHg
+};
+
+% Broker RabbitMQ ao Centro
+\node[brokerbox] (broker) at (0, 0.2) {};
+\node[font=\bfseries\small, text=orange!80!black] at (0, 3.4) {<<execution environment>>};
+\node[font=\bfseries\normalsize] at (0, 3.0) {Servidor RabbitMQ (Sem Exchanges)};
+
+% Filas de Entrada
+\node[queuebox] (qcard) at (0, 2.2) {Fila: \texttt{fila.cardiaco}};
+\node[queuebox] (qo2) at (0, 1.4) {Fila: \texttt{fila.saturacao}};
+\node[queuebox] (qtemp) at (0, 0.6) {Fila: \texttt{fila.temperatura}};
+\node[queuebox] (qpress) at (0, -0.2) {Fila: \texttt{fila.pressao}};
+
+% Divisoria Visual
+\draw[dashed, black!40] (-2.2, -0.7) -- (2.2, -0.7);
+
+% Filas de Saida
+\node[outqueuebox] (qenf) at (0, -1.3) {Fila: \texttt{fila.enfermagem}};
+\node[outqueuebox] (qmed) at (0, -2.1) {Fila: \texttt{fila.medico.<id>}};
+\node[outqueuebox] (qmov) at (0, -2.9) {Fila: \texttt{fila.alerta}};
+
+% Conexoes Sensores -> Filas do RabbitMQ
+\draw[conn] (card.east) -- (qcard.west);
+\draw[conn] (o2.east) -- (qo2.west);
+\draw[conn] (temp.east) -- (qtemp.west);
+\draw[conn] (press.east) -- (qpress.west);
+
+% Componente Mediator (Processador de Negocio e Roteamento)
+\node[nodebox, fill=purple!8, draw=purple!80, minimum width=4.8cm, minimum height=1.6cm] (mediator) at (0, -5.2) {
+    \textbf{<<process>>}\\
+    \textbf{Serviço MonitorMediator}\\
+    Consome Filas Entrada $\rightarrow$ Classifica $\rightarrow$ Roteia Saídas
+};
+
+% Conexoes Mediator
+\draw[conn, dashed, purple!80!black] (qpress.south) -- ++(0,-0.3) -| ($(mediator.north)+(-1.2,0)$) node[pos=0.5, left, font=\tiny] {Consumo};
+\draw[conn, purple!80!black] ($(mediator.north)+(1.2,0)$) -- ++(0, 0.8) -| (qmov.south) node[pos=0.4, right, font=\tiny] {Entrega};
+
+% Clientes / Paineis a Direita
+\node[clientbox] (enf) at (5.5, -1.3) {
+    \textbf{<<device>>}\\
+    \textbf{Painel Enfermagem}\\
+    Fila: \texttt{fila.enfermagem}
+};
+
+\node[clientbox] (med) at (5.5, -2.1) {
+    \textbf{<<device>>}\\
+    \textbf{Painel Médico}\\
+    Fila: \texttt{fila.medico.<id>}
+};
+
+\node[clientbox] (mov) at (5.5, -3.2) {
+    \textbf{<<mobile device>>}\\
+    \textbf{App Móvel / Alerta}\\
+    Fila: \texttt{fila.alerta}
+};
+
+% Conexoes Filas de Saida -> Paineis
+\draw[conn] (qenf.east) -- (enf.west);
+\draw[conn] (qmed.east) -- (med.west);
+\draw[conn] (qmov.east) -- (mov.west);
+
+\end{tikzpicture}
+\caption{Diagrama de Implantação Formal sem Exchanges com Mediator.}
+\label{fig:diagrama_implantacao}
+\end{figure}
+
+\newpage
+\section{Diagrama de Casos de Uso (\textit{Use Case Diagram})}
+
+A Figura~\ref{fig:casos_de_uso} ilustra as interações dos atores humanos e sistêmicos com as funcionalidades da plataforma.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    actor/.style={font=\footnotesize\bfseries, align=center},
+    usecase/.style={draw=black!80, fill=blue!6, ellipse, minimum width=4.8cm, minimum height=1.1cm, align=center, font=\scriptsize},
+    assoc/.style={-{Latex[length=2mm]}, line width=0.7pt, draw=black!70}
+]
+
+% Atores
+\node[actor] (sensorActor) at (-5.5, 2.5) {
+    \textbf{<<device>>}\\
+    \textbf{Sensores IoT}
+};
+
+\node[actor] (mediatorActor) at (-5.5, -1.5) {
+    \textbf{<<system>>}\\
+    \textbf{MonitorMediator}
+};
+
+\node[actor] (enfActor) at (5.5, 3) {
+    \textbf{Técnico de}\\
+    \textbf{Enfermagem}
+};
+
+\node[actor] (medActor) at (5.5, 0.5) {
+    \textbf{Médico}\\
+    \textbf{Responsável}
+};
+
+\node[actor] (emergActor) at (5.5, -2) {
+    \textbf{Plantão de}\\
+    \textbf{Emergência}
+};
+
+% Casos de Uso
+\node[usecase] (uc1) at (0, 3.2) {UC01: Coletar e Transmitir\\Telemetria para Fila Própria};
+\node[usecase] (uc2) at (0, 1.8) {UC02: Mediar, Analisar e\\Rotear para Filas de Destino};
+\node[usecase] (uc3) at (0, 0.4) {UC03: Monitorar Visão Geral\\de Todos os Leitos};
+\node[usecase] (uc4) at (0, -1.0) {UC04: Acompanhar Sinais\\do Paciente Alocado};
+\node[usecase] (uc5) at (0, -2.4) {UC05: Receber Alerta Crítico\\de Resposta Imediata};
+
+% Associacoes
+\draw[assoc] (sensorActor) -- (uc1);
+\draw[assoc] (uc1) -- (uc2);
+\draw[assoc] (mediatorActor) -- (uc2);
+
+\draw[assoc] (uc3) -- (enfActor);
+\draw[assoc] (uc4) -- (medActor);
+\draw[assoc] (uc5) -- (emergActor);
+
+\end{tikzpicture}
+\caption{Diagrama de Casos de Uso do Sistema.}
+\label{fig:casos_de_uso}
+\end{figure}
+
+\newpage
+\section{Diagramas de Atividades (\textit{Activity Diagrams})}
+
+\subsection{Fluxo Completo de Telemetria e Mediação}
+A Figura~\ref{fig:atividade_geral} detalha a sequência de passos operacionais executados desde a leitura do transdutor físico até a renderização nos painéis.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    activity/.style={draw=black!80, fill=blue!5, rounded corners=4pt, font=\scriptsize, align=center, text width=3.8cm, minimum height=0.9cm},
+    startstop/.style={draw=black, fill=black, circle, minimum size=0.45cm},
+    endstop/.style={draw=black, fill=white, circle, minimum size=0.55cm},
+    conn/.style={-{Latex[length=2.5mm]}, line width=0.8pt}
+]
+
+\node[startstop] (start) at (0, 7.5) {};
+
+\node[activity] (medir) at (0, 6.4) {Sensor afere grandeza física\\(\texttt{medir()})};
+\node[activity] (publicarFila) at (0, 5.1) {Publica payload na fila dedicada\\(\texttt{fila.<tipo>})};
+\node[activity] (mediatorConsume) at (0, 3.8) {MonitorMediator consome\\mensagem da fila};
+\node[activity] (classificar) at (0, 2.5) {Analisa regras e classifica\\gravidade (Rotina/Atenção/Crítico)};
+\node[activity] (publicarDestinos) at (0, 1.2) {Mediator despacha nas filas\\diretas (\texttt{enfermagem}, \texttt{medico}, \texttt{alerta})};
+\node[activity] (receberPaineis) at (0, -0.1) {Painéis hospitalares consomem\\diretamente de suas filas};
+
+\node[endstop] (end) at (0, -1.2) {};
+\node[draw=black, fill=black, circle, minimum size=0.35cm] at (0, -1.2) {};
+
+\draw[conn] (start) -- (medir);
+\draw[conn] (medir) -- (publicarFila);
+\draw[conn] (publicarFila) -- (mediatorConsume);
+\draw[conn] (mediatorConsume) -- (classificar);
+\draw[conn] (classificar) -- (publicarDestinos);
+\draw[conn] (publicarDestinos) -- (receberPaineis);
+\draw[conn] (receberPaineis) -- (end);
+
+\end{tikzpicture}
+\caption{Diagrama de Atividades: Ciclo de Vida da Informação com Mediator.}
+\label{fig:atividade_geral}
+\end{figure}
+
+\newpage
+\subsection{Fluxo de Disparo e Recepção de Alerta Crítico}
+A Figura~\ref{fig:atividade_alerta} ilustra a bifurcação de fluxo quando uma leitura atinge parâmetros fisiológicos limítrofes.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    activity/.style={draw=black!80, fill=blue!5, rounded corners=4pt, font=\scriptsize, align=center, text width=3.4cm, minimum height=0.8cm},
+    decision/.style={draw=black!80, fill=yellow!15, diamond, aspect=1.8, font=\tiny\bfseries, align=center, inner sep=2pt},
+    startstop/.style={draw=black, fill=black, circle, minimum size=0.4cm},
+    endstop/.style={draw=black, fill=white, circle, minimum size=0.5cm},
+    conn/.style={-{Latex[length=2.5mm]}, line width=0.8pt}
+]
+
+\node[startstop] (start) at (0, 6) {};
+\node[activity] (analisar) at (0, 5) {Avaliar parâmetros\\no Mediator};
+\node[decision] (decisao) at (0, 3.6) {Prioridade ==\\Crítico?};
+
+\node[activity, fill=red!10, draw=red!80] (critico) at (3.5, 2.2) {Mediator publica em\\ \texttt{fila.alerta} e \texttt{fila.enfermagem}};
+\node[activity, fill=green!10, draw=green!80] (rotina) at (-3.5, 2.2) {Mediator publica apenas em\\ \texttt{fila.enfermagem} e \texttt{fila.medico}};
+
+\node[activity, fill=red!15, text width=3.8cm] (appEmerg) at (3.5, 0.4) {App Emergência consome e\\dispara alarme sonoro};
+\node[activity, text width=3.8cm] (painelGeral) at (-3.5, 0.4) {Painéis clínicos atualizam\\telemetria regular};
+
+\node[endstop] (end) at (0, -1.2) {};
+\node[draw=black, fill=black, circle, minimum size=0.3cm] at (0, -1.2) {};
+
+\draw[conn] (start) -- (analisar);
+\draw[conn] (analisar) -- (decisao);
+\draw[conn] (decisao) -- node[above, font=\tiny] {Sim} (critico);
+\draw[conn] (decisao) -- node[above, font=\tiny] {Não} (rotina);
+
+\draw[conn] (critico) -- (appEmerg);
+\draw[conn] (rotina) -- (painelGeral);
+
+\draw[conn] (appEmerg) |- (end);
+\draw[conn] (painelGeral) |- (end);
+
+\end{tikzpicture}
+\caption{Diagrama de Atividades: Triagem de Alerta Crítico pelo Mediator.}
+\label{fig:atividade_alerta}
+\end{figure}
+
+\newpage
+\section{Diagrama de Estados (\textit{State Machine Diagram})}
+
+A condição fisiológica do paciente e suas medições constituem uma máquina de estados finitos bem delimitada. A Figura~\ref{fig:diagrama_estados} apresenta as transições entre estados de gravidade clínica com suas condições de guarda numéricas.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[
+    state/.style={draw=black!80, fill=blue!8, rounded corners=6pt, font=\scriptsize\bfseries, align=center, minimum width=3.4cm, minimum height=1.3cm, line width=0.8pt},
+    startstop/.style={draw=black, fill=black, circle, minimum size=0.45cm},
+    conn/.style={-{Latex[length=2.5mm]}, line width=0.8pt}
+]
+
+\node[startstop] (init) at (-5.5, 2.5) {};
+
+\node[state, fill=green!15, draw=green!70!black] (normal) at (-1.5, 2.5) {
+    ESTADO NORMAL\\
+    (Rotina)\\
+    \rule{3cm}{0.3pt}\\
+    \tiny
+    $60 \le \text{BPM} \le 100$\\
+    $\text{SpO}_2 \ge 95\%$\\
+    $35.0 \le \text{T} < 37.3^\circ\text{C}$\\
+    $\text{Pressão} \le 120/80$
+};
+
+\node[state, fill=yellow!20, draw=orange!80!black] (atencao) at (3.5, 2.5) {
+    ESTADO ATENÇÃO\\
+    (Pré-Alerta)\\
+    \rule{3cm}{0.3pt}\\
+    \tiny
+    $101 \le \text{BPM} \le 140$\\
+    $81\% \le \text{SpO}_2 \le 94\%$\\
+    $37.3 \le \text{T} < 37.8^\circ\text{C}$\\
+    $\text{Pré-Hipertensão}$
+};
+
+\node[state, fill=red!20, draw=red!80!black] (critico) at (1, -1.8) {
+    ESTADO CRÍTICO\\
+    (Alerta de Emergência)\\
+    \rule{3cm}{0.3pt}\\
+    \tiny
+    $\text{BPM} > 140 \lor \text{BPM} < 60$\\
+    $\text{SpO}_2 < 81\%$\\
+    $\text{T} \ge 37.8^\circ\text{C} \lor \text{T} < 35.0^\circ\text{C}$\\
+    $\text{Hipertensão} \lor \text{Hipotensão}$
+};
+
+\draw[conn] (init) -- (normal);
+
+\draw[conn] ($(normal.east)+(0,0.25)$) -- ($(atencao.west)+(0,0.25)$)
+    node[midway, above, font=\tiny] {Variação Leve};
+
+\draw[conn] ($(atencao.west)+(0,-0.25)$) -- ($(normal.east)+(0,-0.25)$)
+    node[midway, below, font=\tiny] {Estabilização};
+
+\draw[conn] (atencao.south) -- (critico.east)
+    node[midway, right, font=\tiny] {Agravamento Clínico};
+
+\draw[conn] (critico.north) -- (normal.south)
+    node[midway, left, font=\tiny] {Resposta a Medicamentos};
+
+\draw[conn] (normal.south) -- ++(0,-0.8) -| ($(critico.west)+(0,0.2)$)
+    node[pos=0.2, below, font=\tiny] {Intercorrência Súbita};
+
+\end{tikzpicture}
+\caption{Máquina de Estados: Transições de Gravidade Clínica do Paciente.}
+\label{fig:diagrama_estados}
+\end{figure}
+
+\section{Considerações Finais}
+A eliminação das \textit{Exchanges} complexas transferiu com sucesso a responsabilidade do roteamento para o \textbf{MonitorMediator}. A infraestrutura do RabbitMQ passa a atuar estritamente como um conjunto de filas buffers de alta disponibilidade, enquanto o software Java orquestra toda a semântica do domínio hospitalar. Os requisitos funcionais e não-funcionais encontram-se plenamente alinhados com o esboço do quadro docente e validados em código compilado.
+
+\end{document}

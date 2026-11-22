@@ -1,5 +1,7 @@
 package subscriber;
 
+import broker.RabbitMQConfig;
+
 public class AppEmergencia extends PainelHospitalar {
 
     private String idPaciente;
@@ -9,25 +11,29 @@ public class AppEmergencia extends PainelHospitalar {
     }
 
     @Override
-    protected String getTopicoAssinatura() {
-        if (idPaciente != null && !idPaciente.isEmpty()) {
-            // Apenas alertas criticos de um paciente especifico
-            return idPaciente + ".*.critico";
-        }
-        // Se nao passar paciente, monitora os criticos de TODOS os leitos
-        return "*.*.critico";
+    protected String getNomeFila() {
+        return RabbitMQConfig.FILA_ALERTA;
     }
 
     @Override
-    protected void processarMensagem(String routingKey, String mensagem) {
-        System.out.println(" [EMERGENCIA] " + routingKey + " -> " + mensagem);
+    protected void processarMensagem(String mensagem) {
+        if (idPaciente != null && !idPaciente.isEmpty()) {
+            if (!mensagem.toUpperCase().contains("[" + idPaciente.toUpperCase() + "]")) {
+                return;
+            }
+        }
+        System.out.println("\n==========================================================================");
+        System.out.println(" [!] ALERTA CRITICO DE EMERGENCIA - CODIGO AZUL");
+        System.out.println("==========================================================================");
+        System.out.println("  " + mensagem);
+        System.out.println("==========================================================================\u0007");
     }
 
     @Override
     protected String getNomePainel() {
         if (idPaciente != null && !idPaciente.isEmpty()) {
-            return "APP EMERGENCIA (Paciente: " + idPaciente + " | Somente CRITICO)";
+            return "APP EMERGENCIA (Paciente: " + idPaciente + " | Somente Leituras CRITICAS)";
         }
-        return "APP EMERGENCIA (Todos os pacientes | Somente CRITICO)";
+        return "APP EMERGENCIA (Todos os Pacientes | Somente Leituras CRITICAS)";
     }
 }

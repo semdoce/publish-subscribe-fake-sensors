@@ -2,7 +2,6 @@
 setlocal enabledelayedexpansion
 chcp 65001 > nul
 
-:: 1. Define o java: tenta do PATH ou usa o do Eclipse
 where java >nul 2>nul
 if %errorlevel% equ 0 (
     set JAVA_CMD=java
@@ -17,19 +16,20 @@ cls
 echo ==================================================
 echo         SISTEMA HOSPITALAR IOT - EXECUCAO
 echo ==================================================
-echo  [1] Publicador (Publisher - monitor paciente1)
-echo  [2] Publicador com ID personalizado
-echo  [3] Subscriber: Painel Enfermagem (recebe tudo: #)
-echo  [4] Subscriber: Painel Medico (paciente1.#)
-echo  [5] Subscriber: App Emergencia (somente critico)
-echo  [6] Recompilar projeto
+echo  [1] Iniciar Sistema (Sensores + Mediator - paciente1)
+echo  [2] Iniciar Sistema com ID personalizado
+echo  [3] Subscriber: Painel Enfermagem (fila.enfermagem)
+echo  [4] Subscriber: Painel Medico (fila.medico.paciente1)
+echo  [5] Subscriber: App Emergencia (fila.alerta)
+echo  [6] Iniciar Apenas um Sensor Individual
+echo  [7] Recompilar projeto
 echo  [0] Sair
 echo ==================================================
 set /p opcao="Escolha uma opcao: "
 
 if "%opcao%"=="1" (
     echo.
-    echo Iniciando Publisher para paciente1...
+    echo Iniciando Sensores e Mediator para paciente1...
     %JAVA_CMD% -cp "%CP%" main.Main paciente1
     pause
     goto menu
@@ -37,7 +37,7 @@ if "%opcao%"=="1" (
 if "%opcao%"=="2" (
     set /p pac="Digite o ID do paciente (ex: paciente2): "
     echo.
-    echo Iniciando Publisher para !pac!...
+    echo Iniciando Sensores e Mediator para !pac!...
     %JAVA_CMD% -cp "%CP%" main.Main !pac!
     pause
     goto menu
@@ -72,6 +72,17 @@ if "%opcao%"=="5" (
     goto menu
 )
 if "%opcao%"=="6" (
+    set /p pac="Digite o ID do paciente [padrao: paciente1]: "
+    if "!pac!"=="" set pac=paciente1
+    echo Tipos disponiveis: cardiaco, pressao, saturacao, temperatura
+    set /p tipo="Digite o tipo do sensor: "
+    echo.
+    echo Iniciando Sensor !tipo! para !pac!...
+    %JAVA_CMD% -cp "%CP%" sensors.PublicadorSensores !pac! !tipo!
+    pause
+    goto menu
+)
+if "%opcao%"=="7" (
     call compilar.bat
     pause
     goto menu
@@ -81,4 +92,3 @@ if "%opcao%"=="0" exit /b 0
 echo Opcao invalida.
 timeout /t 2 >nul
 goto menu
-

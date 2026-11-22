@@ -1,5 +1,6 @@
 package subscriber;
 
+import java.nio.charset.StandardCharsets;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -8,11 +9,11 @@ import broker.RabbitMQConfig;
 
 public abstract class PainelHospitalar {
 
-    protected abstract String getTopicoAssinatura();
-    protected abstract void processarMensagem(String routingKey, String mensagem);
+    protected abstract String getNomeFila();
+    protected abstract void processarMensagem(String mensagem);
     protected abstract String getNomePainel();
 
-    // Template method: conecta ao RabbitMQ, cria fila temporaria e consome
+    // Template method: conecta ao RabbitMQ, garante a fila e consome sem depender de Exchange
     public final void iniciar() {
         ConnectionFactory factory = new ConnectionFactory();
         factory.setHost(RabbitMQConfig.HOST);
@@ -21,26 +22,24 @@ public abstract class PainelHospitalar {
             final Connection connection = factory.newConnection();
             final Channel channel = connection.createChannel();
 
-            // Declara a exchange de topicos e cria a fila temporaria exclusiva deste painel
-            channel.exchangeDeclare(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.EXCHANGE_TYPE);
-            String queueName = channel.queueDeclare().getQueue();
-            
-            // Faz o bind no topico especifico que cada subclasse definiu
-            channel.queueBind(queueName, RabbitMQConfig.EXCHANGE_NAME, getTopicoAssinatura());
+            String nomeFila = getNomeFila();
+
+            // Declara a fila direta como duravel (sem exchange)
+            channel.queueDeclare(nomeFila, true, false, false, null);
 
             System.out.println("==================================================");
             System.out.println(" " + getNomePainel());
-            System.out.println(" Binding: " + getTopicoAssinatura());
-            System.out.println(" Aguardando mensagens... (CTRL+C para sair)");
+            System.out.println(" Fila Direta: " + nomeFila + " (Sem Exchange)");
+            System.out.println(" Aguardando mensagens enviadas pelo Mediator...");
+            System.out.println(" (Pressione CTRL+C para sair)");
             System.out.println("==================================================\n");
 
             DeliverCallback deliverCallback = (consumerTag, delivery) -> {
-                String mensagem = new String(delivery.getBody(), "UTF-8");
-                String routingKey = delivery.getEnvelope().getRoutingKey();
-                processarMensagem(routingKey, mensagem);
+                String mensagem = new String(delivery.getBody(), StandardCharsets.UTF_8);
+                processarMensagem(mensagem);
             };
 
-            channel.basicConsume(queueName, true, deliverCallback, consumerTag -> { });
+            channel.basicConsume(nomeFila, true, deliverCallback, consumerTag -> { });
 
         } catch (Exception e) {
             System.err.println("Erro na conexao com RabbitMQ: " + e.getMessage());

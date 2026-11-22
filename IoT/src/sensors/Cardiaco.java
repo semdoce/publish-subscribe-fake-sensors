@@ -3,6 +3,13 @@ package sensors;
 public class Cardiaco implements Sensor {
     private double bpm;
 
+    public Cardiaco() {
+    }
+
+    public Cardiaco(double bpm) {
+        this.bpm = bpm;
+    }
+
     @Override
     public double medir() {
         int categoria = (int) Math.floor(Math.random() * 6) + 1;
